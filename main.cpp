@@ -13,12 +13,12 @@ std::vector<Konta*> konta;
 std::vector<Postac*> postacie;
 
 Konta::Konta(std::string _login, std::string _password):login(_login),
-	password(_password),curl(new CURL_myobj())
+	password(_password)
 {
 
 }
 Konta::~Konta(){
-	delete curl;
+
 }
 std::string Konta::getLogin(){
 	return login;
@@ -139,26 +139,7 @@ void praca_unlock(){
 bool praca_locked(){
 	return praca_lock_state==1?true:false;
 }
-int read_config(){
-	fline linia;
-	//wczytywanie konfigu i start watkow
-	file plik_konfig("config.txt","rb","=");
-	if(!plik_konfig.isGood()){
-		cout<<"Nie znaleziono pliku konfiguracyjnego, utwórz plik config.txt"<<endl;
-		return 1;
-	}
-	while(plik_konfig.isEOF()){
-		linia=plik_konfig.getLine();
-		if(linia.isCommented()){
-			continue;
-		}
-		if(linia.countVals()<2 || linia.getVal(0).empty()){
-			continue;
-		}
-		//cout<<linia.getVal(0)<<endl;
-	}
-	return 0;
-}
+int read_config();
 
 int read_konta(){
 	fline linia;

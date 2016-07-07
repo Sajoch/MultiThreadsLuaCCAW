@@ -12,7 +12,6 @@ class Konta{
 	std::string password;
 public:
 	bool inthread;
-	CURL_myobj* curl;
 	Konta(std::string _login, std::string _password);
 	~Konta();
 	std::string getLogin();
@@ -74,6 +73,7 @@ public:
 
 	static std::mutex print_mutex;
 
+	static int _Lua_http_request(lua_State* s);
 	//curl
 	static int _Lua_curl_init(lua_State* s);
 	static int _Lua_curl_set(lua_State* s);
