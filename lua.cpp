@@ -14,9 +14,9 @@
 
 using namespace std;
 
-void praca_lock();
-void praca_unlock();
-bool praca_locked();
+void work_lock();
+void work_unlock();
+bool work_locked();
 std::mutex LuaThread::print_mutex;
 
 
@@ -37,35 +37,40 @@ bool LuaThread::isFree(){
 size_t LuaThread::getId(){
 	return id;
 }
-bool LuaThread::addPostac(Postac* p){
+bool LuaThread::addChar(Character* p){
 	std::unique_lock<std::mutex> lk(*m);
-	Konta* konto = p->getParent();
-	if(praca==0 && konto!=0){
-		konto->inthread=true;
-		praca=p;
+	Account* acc = p->getParent();
+	if(work==0 && acc!=0){
+		acc->inthread = true;
+		work = p;
+		work_acc = acc;
 		command = 1;
-		skasuj = false;
+		del = false;
 		cv->notify_one();
 		return true;
 	}
 	return false;
 }
-bool LuaThread::isPostac(Postac* p){
-	return praca==p;
+bool LuaThread::isAcc(Account* a){
+	return work_acc==a;
 }
-Postac* LuaThread::getPostac(){
-	return praca;
+bool LuaThread::isChar(Character* p){
+	return work==p;
 }
-void LuaThread::delPostac(){
+Character* LuaThread::getChar(){
+	return work;
+}
+void LuaThread::delChar(){
 	std::unique_lock<std::mutex> lk(*m);
-	skasuj = true;
+	del = true;
 	command = 1;
 	cv->notify_one();
 }
 LuaThread::LuaThread(){
 	command = 0;
-	praca = 0;
-	skasuj = false;
+	work = 0;
+	work_acc = 0;
+	del = false;
 	id=numbers;
 	numbers++;
 	luaS=0;
@@ -87,8 +92,8 @@ void LuaThread::thread(){
 	while(1){
 		m->lock();
 		int _command=command;
-		Postac* _praca=praca;
-		bool _skasuj=skasuj;
+		Character* _work=work;
+		bool _del=del;
 		lua_State* _luaS=luaS;
 		m->unlock();
 		switch(_command){
@@ -99,26 +104,26 @@ void LuaThread::thread(){
 			case 1:{
 				//do sth
 				//cout<<"do"<<endl;
-				if(_skasuj){
+				if(_del){
 					m->lock();
-					Konta* konto = praca->getParent();
-					if(konto!=0){
-						konto->inthread=false;
+					Account* acc = work->getParent();
+					if(acc!=0){
+						acc->inthread=false;
 					}
-					praca = 0;
+					work = 0;
 					command=0;
 					if(luaS!=0){
 						lua_close(luaS);
 						luaS=0;
 					}
 					m->unlock();
-					_praca = praca;
+					_work = work;
 					_command = command;
 					_luaS = luaS;
 					size_t sleep_after_work=5;
 					sleep_after_work+=rand()%10;
 					std::this_thread::sleep_for(std::chrono::seconds(sleep_after_work));
-				}else if(_praca!=0){
+				}else if(_work!=0){
 					if(_luaS==0){
 						//init lua for first time
 						m->lock();
@@ -155,6 +160,7 @@ void LuaThread::thread(){
 						//lua_register(luaS,"sleep",_Lua_sleep);
 						lua_register(luaS,"mstime",_Lua_mstime);
 						lua_register(luaS,"time",_Lua_time);
+						lua_register(luaS,"getHour",_Lua_getHour);
 						//lua_register(luaS,"setnext",_Lua_setnext);
 						lua_register(luaS,"md5",_Lua_md5);
 						lua_register(luaS,"sha1",_Lua_sha1);
@@ -175,28 +181,35 @@ void LuaThread::thread(){
 
 						lua_register(luaS,"http_request",_Lua_http_request);
 
-						//lua_register(luaS,"curl_init",CURL_myobj::_Lua_curl_init);
-						//lua_register(luaS,"curl_set",CURL_myobj::_Lua_curl_set);
-						//lua_register(luaS,"curl_exec",CURL_myobj::_Lua_curl_exec);
-						//lua_register(luaS,"curl_get_body",CURL_myobj::_Lua_curl_get_body);
-						//lua_register(luaS,"curl_add_cookie",CURL_myobj::_Lua_add_cookie);
-						//lua_register(luaS,"curl_reset",CURL_myobj::_Lua_curl_reset);
-						//lua_register(luaS,"curl_clean",CURL_myobj::_Lua_curl_clean);
+						lua_register(luaS,"getConfigString",_Lua_getConfigString);
+						lua_register(luaS,"getConfigInt",_Lua_getConfigInt);
+						lua_register(luaS,"getConfigBool",_Lua_getConfigBool);
 
 						lua_getfield(luaS, LUA_GLOBALSINDEX, "Postac");
-						praca_lock();
-						Konta* konto = praca->getParent();
-						if(konto==0){
-							cout<<"konto is 0"<<endl;
-							exit(1);
+						work_lock();
+						if(work==0 || del){
+							m->lock();
+							del=true;
+							work = 0;
+							m->unlock();
+							break;
+						}
+						Account* acc = work->getParent();
+						if(acc==0){
+							cout<<"acc is 0"<<endl;
+							//exit(1);
+							m->lock();
+							del=true;
+							m->unlock();
+							break;
 						}
 						//lua_pushlightuserdata(luaS, this);
-						lua_pushstring(luaS, konto->getLogin().c_str());
-						lua_pushstring(luaS, konto->getPassword().c_str());
-						lua_pushstring(luaS, praca->getNick().c_str());
-						lua_pushstring(luaS, praca->getWorld().c_str());
+						lua_pushstring(luaS, acc->getLogin().c_str());
+						lua_pushstring(luaS, acc->getPassword().c_str());
+						lua_pushstring(luaS, work->getNick().c_str());
+						lua_pushstring(luaS, work->getWorld().c_str());
 						lua_pushnil(luaS);
-						praca_unlock();
+						work_unlock();
 						if(lua_pcall(luaS, 5, 1, 0) != 0){
 							cout<<"error running function 'new Postac': "<<lua_tostring(luaS,-1)<<endl;
 							exit(1);
@@ -209,14 +222,14 @@ void LuaThread::thread(){
    				lua_remove(luaS,-2);
    				lua_getfield(luaS, LUA_GLOBALSINDEX, "account");
 					if(lua_isfunction(luaS,-2)){
-						praca_lock();
-						Konta* konto = praca->getParent();
-						if(konto==0){
-							praca_unlock();
+						work_lock();
+						Account* acc = work->getParent();
+						if(acc==0){
+							work_unlock();
 							m->lock();
-							skasuj = true;
+							del = true;
 							m->unlock();
-							_skasuj=skasuj;
+							_del=del;
 							continue;
 						}
 						//lua_pushlightuserdata(luaS, konto->curl);
@@ -224,7 +237,7 @@ void LuaThread::thread(){
 							cout<<"error running function 'account.tick': "<<lua_tostring(luaS,-1)<<endl;
 							exit(1);
 						}
-						praca_unlock();
+						work_unlock();
 						size_t sleep_time = lua_tointeger(luaS,-2);
 						size_t logout_time = lua_tointeger(luaS,-1);
 						lua_pop(luaS,2);
@@ -233,10 +246,10 @@ void LuaThread::thread(){
 								std::this_thread::sleep_for(std::chrono::milliseconds(sleep_time));
 							}
 						}else{
-							praca_lock();
-							praca->setNext(logout_time);
-							praca_unlock();
-							delPostac();
+							work_lock();
+							work->setNext(logout_time);
+							work_unlock();
+							delChar();
 						}
 					}
 				}else{
@@ -256,14 +269,6 @@ void LuaThread::thread(){
 			}
 		}
 	}
-}
-int LuaThread::_Lua_sleep(lua_State* s){
-	int n = lua_gettop(s);
-	if(n==1 && lua_isnumber(s,1)){
-		size_t t=lua_tonumber(s,1);
-		std::this_thread::sleep_for(std::chrono::milliseconds(t));
-	}
-	return 0;
 }
 void PrintTable(lua_State *s, int index, int shift){
 	lua_pushnil(s);
@@ -353,20 +358,6 @@ int LuaThread::_Lua_time(lua_State* s){
 	size_t t=req.count();
 	lua_pushinteger(s,t);
 	return 1;
-}
-int LuaThread::_Lua_setnext(lua_State* s){
-	int n = lua_gettop(s);
-	if(n==2 && lua_isuserdata(s,1) && lua_isnumber(s,2)){
-		LuaThread* pt=(LuaThread*)lua_touserdata(s,1);
-		time_t t=lua_tonumber(s,2);
-		if(pt!=0){
-			praca_lock();
-			pt->praca->setNext(t);
-			praca_unlock();
-			pt->delPostac();
-		}
-	}
-	return 0;
 }
 int LuaThread::_Lua_sha1(lua_State* s){
 	int n = lua_gettop(s);
@@ -502,6 +493,7 @@ size_t LuaGetIntTable(lua_State* s, int index, const char* key){
 }
 int LuaThread::_Lua_http_request(lua_State* s){
 	//url, method, cookies, postdata, additional
+	//TODO add catcher of exceptions
 	int n = lua_gettop(s);
 	if(n<3){
 		lua_pushstring(s,"too few arguments");
@@ -529,95 +521,132 @@ int LuaThread::_Lua_http_request(lua_State* s){
 		lua_pushstring(s,"wrong method");
 		return 1;
 	}
-	Poco::Net::NameValueCollection wcookies;
-	std::vector < Poco::Net::HTTPCookie > cookies;
-	if(lua_istable(s,3)){
-		lua_pushnil(s);
-	  while(lua_next(s, 3) != 0){
-			Poco::Net::HTTPCookie tc;
-			tc.setDomain(LuaGetStringTable(s,-2,"domain"));
-			tc.setPath(LuaGetStringTable(s,-2,"path"));
-			tc.setName(LuaGetStringTable(s,-2,"name"));
-			tc.setValue(LuaGetStringTable(s,-2,"value"));
-			tc.setMaxAge(LuaGetIntTable(s,-2,"expire"));
-			cookies.push_back(tc);
-			lua_pop(s,1);
+	try{
+		Poco::Net::NameValueCollection wcookies;
+		std::vector < Poco::Net::HTTPCookie > cookies;
+		if(lua_istable(s,3)){
+			lua_pushnil(s);
+		  while(lua_next(s, 3) != 0){
+				Poco::Net::HTTPCookie tc;
+				tc.setDomain(LuaGetStringTable(s,-2,"domain"));
+				tc.setPath(LuaGetStringTable(s,-2,"path"));
+				tc.setName(LuaGetStringTable(s,-2,"name"));
+				tc.setValue(LuaGetStringTable(s,-2,"value"));
+				tc.setMaxAge(LuaGetIntTable(s,-2,"expire"));
+				cookies.push_back(tc);
+				lua_pop(s,1);
+			}
+		}else{
+			lua_pushstring(s,"wrong cookies");
+			return 1;
 		}
-	}else{
-		lua_pushstring(s,"wrong cookies");
+		//cout<<"http request p "<<protocol<<" h "<<host<<" p "<<path<<endl;
+		string postdata ="";
+		if(lua_isstring(s,4)){
+			postdata = lua_tostring(s,4);
+		}
+		Poco::Net::HTTPClientSession session(host);
+		session.setKeepAlive(true);
+		Poco::Net::HTTPRequest request(method,path,"HTTP/1.1");
+		request.add("Host",host);
+		request.setKeepAlive(true);
+		request.add("User-Agent","Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit (KHTML, like Gecko) Chrome Safari");
+		string cookie_domain="."+host;
+		for(size_t i=0;i<cookies.size();i++){
+			Poco::Net::HTTPCookie& o = cookies[i];
+			if(path.find(o.getPath())!=std::string::npos && cookie_domain.find("."+o.getDomain())){
+				wcookies.add(o.getName(),o.getValue());
+			}
+		}
+		if(wcookies.size()>0){
+			request.setCookies(wcookies);
+		}
+		if(method=="POST"){
+			request.setContentType("application/x-www-form-urlencoded");
+			request.setContentLength(postdata.length());
+			ostream& myOStream = session.sendRequest(request);
+		  myOStream << postdata;
+		}else{
+			session.sendRequest(request);
+		}
+		//request.write(cout);
+		Poco::Net::HTTPResponse res;
+		istream& i = session.receiveResponse(res);
+		size_t len = res.getContentLength();
+		string body;
+		body.resize(len);
+		i.read(&body[0],len);
+
+		std::vector < Poco::Net::HTTPCookie > vcookies;
+		res.getCookies(vcookies);
+		for(size_t i=0;i<vcookies.size();i++){
+			Poco::Net::HTTPCookie& o = vcookies[i];
+			lua_createtable(s,0,5);
+			//domain, name, path, value, expire
+			LuaSetTable(s,-3,"domain",o.getDomain().c_str());
+			LuaSetTable(s,-3,"name",o.getName().c_str());
+			LuaSetTable(s,-3,"path",o.getPath().c_str());
+			LuaSetTable(s,-3,"value",o.getValue().c_str());
+			LuaSetTable(s,-3,"expire",o.getMaxAge());
+			size_t id = 0;
+			lua_pushnil(s);
+		  while(lua_next(s, 3) != 0){
+				size_t key = lua_tointeger(s,-2);
+				if(LuaGetStringTable(s,-2,"name")==o.getName() &&
+					 LuaGetStringTable(s,-2,"domain")==o.getDomain() &&
+					 LuaGetStringTable(s,-2,"path")==o.getPath()){
+						 id = key;
+				}
+				lua_pop(s,1);
+			}
+			if(id==0){
+				lua_rawseti(s,3,luaL_getn(s,3)+1);
+			}else{
+				lua_rawseti(s,3,id);
+			}
+		}
+		lua_createtable(s, 0, 2);
+		lua_pushstring(s, "code");
+		lua_pushnumber(s, res.getStatus());
+		lua_settable(s, -3);
+		lua_pushstring(s, "body");
+		lua_pushstring(s, body.c_str());
+		lua_settable(s, -3);
+		return 1;
+	}catch(...){
+		lua_createtable(s, 0, 2);
+		lua_pushstring(s, "code");
+		lua_pushnumber(s, 1000);
+		lua_settable(s, -3);
+		lua_pushstring(s, "body");
+		lua_pushstring(s, "");
+		lua_settable(s, -3);
 		return 1;
 	}
-	//cout<<"http request p "<<protocol<<" h "<<host<<" p "<<path<<endl;
-	string postdata ="";
-	if(lua_isstring(s,4)){
-		postdata = lua_tostring(s,4);
-	}
-	Poco::Net::HTTPClientSession session(host);
-	session.setKeepAlive(true);
-	Poco::Net::HTTPRequest request(method,path,"HTTP/1.1");
-	request.add("Host",host);
-	request.setKeepAlive(true);
-	request.add("User-Agent","Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit (KHTML, like Gecko) Chrome Safari");
-	string cookie_domain="."+host;
-	for(size_t i=0;i<cookies.size();i++){
-		Poco::Net::HTTPCookie& o = cookies[i];
-		if(path.find(o.getPath())!=std::string::npos && cookie_domain.find("."+o.getDomain())){
-			wcookies.add(o.getName(),o.getValue());
-		}
-	}
-	if(wcookies.size()>0){
-		request.setCookies(wcookies);
-	}
-	if(method=="POST"){
-		request.setContentType("application/x-www-form-urlencoded");
-		request.setContentLength(postdata.length());
-		ostream& myOStream = session.sendRequest(request);
-	  myOStream << postdata;
-	}else{
-		session.sendRequest(request);
-	}
-	//request.write(cout);
-	Poco::Net::HTTPResponse res;
-	istream& i = session.receiveResponse(res);
-	size_t len = res.getContentLength();
-	string body;
-	body.resize(len);
-	i.read(&body[0],len);
+}
 
-	std::vector < Poco::Net::HTTPCookie > vcookies;
-	res.getCookies(vcookies);
-	for(size_t i=0;i<vcookies.size();i++){
-		Poco::Net::HTTPCookie& o = vcookies[i];
-		lua_createtable(s,0,5);
-		//domain, name, path, value, expire
-		LuaSetTable(s,-3,"domain",o.getDomain().c_str());
-		LuaSetTable(s,-3,"name",o.getName().c_str());
-		LuaSetTable(s,-3,"path",o.getPath().c_str());
-		LuaSetTable(s,-3,"value",o.getValue().c_str());
-		LuaSetTable(s,-3,"expire",o.getMaxAge());
-		size_t id = 0;
-		lua_pushnil(s);
-	  while(lua_next(s, 3) != 0){
-			size_t key = lua_tointeger(s,-2);
-			if(LuaGetStringTable(s,-2,"name")==o.getName() &&
-				 LuaGetStringTable(s,-2,"domain")==o.getDomain() &&
-				 LuaGetStringTable(s,-2,"path")==o.getPath()){
-					 id = key;
-			}
-			lua_pop(s,1);
-		}
-		if(id==0){
-			lua_rawseti(s,3,luaL_getn(s,3)+1);
-		}else{
-			lua_rawseti(s,3,id);
-		}
-	}
-	lua_createtable(s, 0, 2);
-	lua_pushstring(s, "code");
-	lua_pushnumber(s, res.getStatus());
-	lua_settable(s, -3);
-	lua_pushstring(s, "body");
-	lua_pushstring(s, body.c_str());
-	lua_settable(s, -3);
+int LuaThread::_Lua_getConfigString(lua_State* s){
+	const char* name = luaL_checkstring(s,1);
+	string tmp = getConfigString(name);
+	lua_pushstring(s,tmp.c_str());
+	return 1;
+}
+int LuaThread::_Lua_getConfigInt(lua_State* s){
+	const char* name = luaL_checkstring(s,1);
+	size_t tmp = getConfigInt(name);
+	lua_pushinteger(s,tmp);
+	return 1;
+}
+int LuaThread::_Lua_getConfigBool(lua_State* s){
+	const char* name = luaL_checkstring(s,1);
+	bool tmp = getConfigBool(name);
+	lua_pushboolean(s,tmp);
+	return 1;
+}
+int LuaThread::_Lua_getHour(lua_State* s){
+	time_t t = time(NULL);
+	tm *tm_struct = localtime(&t);
+	int hour = tm_struct->tm_hour;
+	lua_pushnumber(s, hour);
 	return 1;
 }

@@ -5,30 +5,34 @@
 #include <mutex>
 #include <condition_variable>
 #include <lua5.1/lua.hpp>
-#include "curl.hpp"
 
-class Konta{
+std::string getConfigString(std::string name);
+size_t getConfigInt(std::string name);
+bool getConfigBool(std::string name);
+
+class Account{
 	std::string login;
 	std::string password;
 public:
 	bool inthread;
-	Konta(std::string _login, std::string _password);
-	~Konta();
+	Account(std::string _login, std::string _password);
+	~Account();
 	std::string getLogin();
 	std::string getPassword();
 	void setPassword(std::string p);
 };
 
-class Postac{
+class Character{
 	std::string login;
 	std::string world;
 	std::string nick;
+	size_t max_lvl;
 	time_t next_use;
 public:
-	Postac(std::string _login, std::string _world, std::string _nick);
-	Postac(const Postac& a);
-	Konta* getParent();
-	bool isParent(Konta* _par);
+	Character(std::string _login, std::string _world, std::string _nick);
+	Character(const Character& a);
+	Account* getParent();
+	bool isParent(Account* _par);
 	std::string getWorld();
 	std::string getNick();
 	time_t getNext();
@@ -42,8 +46,9 @@ class LuaThread{
 	std::condition_variable* cv;
 	int command;
 	void send_command(int a);
-	Postac* praca;
-	bool skasuj;
+	Character* work;
+	Account* work_acc;
+	bool del;
 	lua_State* luaS;
 	static void start_thread(LuaThread* a);
 	void thread();
@@ -51,15 +56,17 @@ class LuaThread{
 	void unlock();
 	size_t id;
 	static size_t numbers;
+	void clear_thread();
 public:
 	LuaThread();
 	~LuaThread();
 	bool isFree();
 	size_t getId();
-	bool addPostac(Postac* p);
-	void delPostac();
-	bool isPostac(Postac* p);
-	Postac* getPostac();
+	bool addChar(Character* p);
+	void delChar();
+	bool isChar(Character* p);
+	bool isAcc(Account* a);
+	Character* getChar();
 
 
 	//Lua functions
@@ -70,17 +77,15 @@ public:
 	static int _Lua_setnext(lua_State* s);
 	static int _Lua_md5(lua_State* s);
 	static int _Lua_sha1(lua_State* s);
+	static int _Lua_getHour(lua_State* s);
 
 	static std::mutex print_mutex;
 
 	static int _Lua_http_request(lua_State* s);
-	//curl
-	static int _Lua_curl_init(lua_State* s);
-	static int _Lua_curl_set(lua_State* s);
-	static int _Lua_curl_exec(lua_State* s);
-	static int _Lua_curl_get_body(lua_State* s);
-	static int _Lua_curl_get_header(lua_State* s);
-	static int _Lua_curl_clean(lua_State* s);
+
+	static int _Lua_getConfigString(lua_State* s);
+	static int _Lua_getConfigInt(lua_State* s);
+	static int _Lua_getConfigBool(lua_State* s);
 
 	//file
 	static int _Lua_File_open(lua_State* s);

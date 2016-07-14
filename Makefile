@@ -1,12 +1,11 @@
 all: mtlccaw
 test: mtlccaw
 	./mtlccaw
-class.h: curl.h
+class.h:
 file.o: file.cpp file.hpp
-lua.o: lua.cpp class.hpp curl.hpp
+lua.o: lua.cpp class.hpp
 main.o: main.cpp file.hpp class.hpp
 json.o: json.cpp class.hpp
-curl.o: curl.cpp curl.hpp
 government.o: government.cpp class.hpp
 config.o: config.cpp file.hpp
 LINIA=g++ -c $< -o $@ -std=c++11 -ggdb
