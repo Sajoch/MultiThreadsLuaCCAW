@@ -88,180 +88,164 @@ LuaThread::~LuaThread(){
 void LuaThread::start_thread(LuaThread* a){
 	a->thread();
 }
+lua_State* LuaThread::initLua(){
+	m->lock();
+	luaS=luaL_newstate();
+	m->unlock();
+	const luaL_Reg lualibs[] = {
+		{"", luaopen_base},
+		{LUA_TABLIBNAME, luaopen_table},
+		{LUA_STRLIBNAME, luaopen_string},
+		{LUA_MATHLIBNAME, luaopen_math},
+		{NULL, NULL}
+	};
+	const luaL_Reg *lib = lualibs;
+	m->lock();
+	for (; lib->func; lib++) {
+		lua_pushcfunction(luaS, lib->func);
+		lua_pushstring(luaS, lib->name);
+		lua_call(luaS, 1, 0);
+	}
+	if(luaL_loadfile(luaS,"system.lua")){
+		cout<<"Lua fatal error: luaL_loadfile() failed\n\t"<<lua_tostring(luaS,-1)<<endl;
+		lua_close(luaS);
+		m->unlock();
+		return 0;
+	}
+	if (lua_pcall(luaS, 0, 0, 0)){
+		cout<<"Lua fatal error: lua_pcall() failed\n\t"<<lua_tostring(luaS,-1)<<endl;
+		lua_close(luaS);
+		m->unlock();
+		return 0;
+	}
+	lua_register(luaS,"print",_Lua_print);
+	lua_register(luaS,"mstime",_Lua_mstime);
+	lua_register(luaS,"time",_Lua_time);
+	lua_register(luaS,"getHour",_Lua_getHour);
+	lua_register(luaS,"md5",_Lua_md5);
+	lua_register(luaS,"sha1",_Lua_sha1);
+	//rapidjson
+	lua_register(luaS,"RJ_parse",_Lua_rj_parse);
+	//file
+	lua_register(luaS,"File_open",_Lua_File_open);
+	lua_register(luaS,"File_close",_Lua_File_close);
+	lua_register(luaS,"File_isGood",_Lua_File_isGood);
+	lua_register(luaS,"File_isEOF",_Lua_File_isEOF);
+	lua_register(luaS,"File_getLine",_Lua_File_getLine);
+	//http
+	lua_register(luaS,"http_request",_Lua_http_request);
+	//config
+	lua_register(luaS,"getConfigString",_Lua_getConfigString);
+	lua_register(luaS,"getConfigInt",_Lua_getConfigInt);
+	lua_register(luaS,"getConfigBool",_Lua_getConfigBool);
+	m->unlock();
+	return luaS;
+}
+int LuaThread::work_call(){
+	m->lock();
+	if(del){ //clean and go sleep
+		if(work_acc!=0){
+			work_acc->inthread=false;
+		}
+		work = 0;
+		command = 0;
+		if(luaS!=0){
+			lua_close(luaS);
+			luaS=0;
+		}
+		m->unlock();
+		size_t sleep_after_work=5;
+		sleep_after_work+=rand()%10;
+		std::this_thread::sleep_for(std::chrono::seconds(sleep_after_work));
+		return 1;
+	}
+	if(work!=0){ //init lua and tick
+		if(luaS==0){ //init lua
+			m->unlock();
+			work_lock();
+			if(work==0 || del || work_acc == 0){
+				work_unlock();
+				del = true;
+				return 0;
+			}
+			if(initLua()==0){
+				cout<<"error lua cannot be create"<<endl;
+				exit(1);
+			}
+			m->lock();
+			lua_getfield(luaS, LUA_GLOBALSINDEX, "Postac");
+			//lua_pushlightuserdata(luaS, this);
+			lua_pushstring(luaS, work_acc->getLogin().c_str());
+			lua_pushstring(luaS, work_acc->getPassword().c_str());
+			lua_pushstring(luaS, work->getNick().c_str());
+			lua_pushstring(luaS, work->getWorld().c_str());
+			lua_pushnil(luaS);
+			work_unlock();
+			if(lua_pcall(luaS, 5, 1, 0) != 0){
+				cout<<"error running function 'new Postac': "<<lua_tostring(luaS,-1)<<endl;
+				exit(1);
+			}
+			lua_setfield(luaS, LUA_GLOBALSINDEX, "account");
+		}
+		//tick lua
+		lua_getfield(luaS, LUA_GLOBALSINDEX, "account");
+		lua_getfield(luaS, -1, "tick");
+		lua_remove(luaS,-2);
+		lua_getfield(luaS, LUA_GLOBALSINDEX, "account");
+		if(lua_isfunction(luaS,-2)){
+			work_lock();
+			if(work_acc == 0 || work == 0 || del){
+				del = true;
+				return 0;
+			}
+			work_unlock();
+
+			if(lua_pcall(luaS, 1, 2, 0) != 0){
+				cout<<"error running function 'account.tick': "<<lua_tostring(luaS,-1)<<endl;
+				exit(1);
+			}
+			size_t sleep_time = lua_tointeger(luaS,-2);
+			size_t logout_time = lua_tointeger(luaS,-1);
+			lua_pop(luaS,2);
+			if(logout_time==0){
+				if(sleep_time>0){
+					std::this_thread::sleep_for(std::chrono::milliseconds(sleep_time));
+				}
+			}else{
+				work_lock();
+				work->setNext(logout_time);
+				work_unlock();
+				del = true;
+			}
+			m->unlock();
+			return 0;
+		}else{
+			cout<<"error account:tick must be function"<<endl;
+			exit(1);
+		}
+		return 0;
+	}
+	m->lock();
+	del = true;
+	m->unlock();
+	return 0;
+}
 void LuaThread::thread(){
 	while(1){
 		m->lock();
 		int _command=command;
-		Character* _work=work;
-		bool _del=del;
-		lua_State* _luaS=luaS;
 		m->unlock();
 		switch(_command){
-			case 0:{
+			case 0:{//wait
 				std::unique_lock<std::mutex> lk(*m);
 				cv->wait(lk);
 			}break;
 			case 1:{
-				//do sth
-				//cout<<"do"<<endl;
-				if(_del){
-					m->lock();
-					Account* acc = work->getParent();
-					if(acc!=0){
-						acc->inthread=false;
-					}
-					work = 0;
-					command=0;
-					if(luaS!=0){
-						lua_close(luaS);
-						luaS=0;
-					}
-					m->unlock();
-					_work = work;
-					_command = command;
-					_luaS = luaS;
-					size_t sleep_after_work=5;
-					sleep_after_work+=rand()%10;
-					std::this_thread::sleep_for(std::chrono::seconds(sleep_after_work));
-				}else if(_work!=0){
-					if(_luaS==0){
-						//init lua for first time
-						m->lock();
-						luaS=luaL_newstate();
-						m->unlock();
-						_luaS=luaS;
-						const luaL_Reg lualibs[] = {
-							{"", luaopen_base},
-							//{LUA_LOADLIBNAME, luaopen_package},
-							{LUA_TABLIBNAME, luaopen_table},
-							//{LUA_IOLIBNAME, luaopen_io},
-							//{LUA_OSLIBNAME, luaopen_os},
-							{LUA_STRLIBNAME, luaopen_string},
-							{LUA_MATHLIBNAME, luaopen_math},
-							//{LUA_DBLIBNAME, luaopen_debug},
-							{NULL, NULL}
-						};
-						const luaL_Reg *lib = lualibs;
-						for (; lib->func; lib++) {
-							lua_pushcfunction(luaS, lib->func);
-							lua_pushstring(luaS, lib->name);
-							lua_call(luaS, 1, 0);
-						}
-						if(luaL_loadfile(luaS,"system.lua")){
-							cout<<"Lua fatal error: luaL_loadfile() failed\n\t"<<lua_tostring(luaS,-1)<<endl;
-							exit(1);
-						}
-						if (lua_pcall(luaS, 0, 0, 0)){
-							cout<<"Lua fatal error: lua_pcall() failed\n\t"<<lua_tostring(luaS,-1)<<endl;
-							exit(1);
-						}
+				int low_command = work_call();
+				if(low_command==0){//ok
 
-						lua_register(luaS,"print",_Lua_print);
-						//lua_register(luaS,"sleep",_Lua_sleep);
-						lua_register(luaS,"mstime",_Lua_mstime);
-						lua_register(luaS,"time",_Lua_time);
-						lua_register(luaS,"getHour",_Lua_getHour);
-						//lua_register(luaS,"setnext",_Lua_setnext);
-						lua_register(luaS,"md5",_Lua_md5);
-						lua_register(luaS,"sha1",_Lua_sha1);
+				}else if(low_command==1){//go to sleep
 
-						//rapidjson
-
-						lua_register(luaS,"RJ_parse",_Lua_rj_parse);
-
-						//file
-
-						lua_register(luaS,"File_open",_Lua_File_open);
-						lua_register(luaS,"File_close",_Lua_File_close);
-						lua_register(luaS,"File_isGood",_Lua_File_isGood);
-						lua_register(luaS,"File_isEOF",_Lua_File_isEOF);
-						lua_register(luaS,"File_getLine",_Lua_File_getLine);
-
-						//http
-
-						lua_register(luaS,"http_request",_Lua_http_request);
-
-						lua_register(luaS,"getConfigString",_Lua_getConfigString);
-						lua_register(luaS,"getConfigInt",_Lua_getConfigInt);
-						lua_register(luaS,"getConfigBool",_Lua_getConfigBool);
-
-						lua_getfield(luaS, LUA_GLOBALSINDEX, "Postac");
-						work_lock();
-						if(work==0 || del){
-							m->lock();
-							del=true;
-							work = 0;
-							m->unlock();
-							break;
-						}
-						Account* acc = work->getParent();
-						if(acc==0){
-							cout<<"acc is 0"<<endl;
-							//exit(1);
-							m->lock();
-							del=true;
-							m->unlock();
-							break;
-						}
-						//lua_pushlightuserdata(luaS, this);
-						lua_pushstring(luaS, acc->getLogin().c_str());
-						lua_pushstring(luaS, acc->getPassword().c_str());
-						lua_pushstring(luaS, work->getNick().c_str());
-						lua_pushstring(luaS, work->getWorld().c_str());
-						lua_pushnil(luaS);
-						work_unlock();
-						if(lua_pcall(luaS, 5, 1, 0) != 0){
-							cout<<"error running function 'new Postac': "<<lua_tostring(luaS,-1)<<endl;
-							exit(1);
-						}
-           	lua_setfield(luaS, LUA_GLOBALSINDEX, "account");
-					}
-					//tick lua
-					lua_getfield(luaS, LUA_GLOBALSINDEX, "account");
-   				lua_getfield(luaS, -1, "tick");
-   				lua_remove(luaS,-2);
-   				lua_getfield(luaS, LUA_GLOBALSINDEX, "account");
-					if(lua_isfunction(luaS,-2)){
-						work_lock();
-						Account* acc = work->getParent();
-						if(acc==0){
-							work_unlock();
-							m->lock();
-							del = true;
-							m->unlock();
-							_del=del;
-							continue;
-						}
-						//lua_pushlightuserdata(luaS, konto->curl);
-						if(lua_pcall(luaS, 1, 2, 0) != 0){
-							cout<<"error running function 'account.tick': "<<lua_tostring(luaS,-1)<<endl;
-							exit(1);
-						}
-						work_unlock();
-						size_t sleep_time = lua_tointeger(luaS,-2);
-						size_t logout_time = lua_tointeger(luaS,-1);
-						lua_pop(luaS,2);
-						if(logout_time==0){
-							if(sleep_time>0){
-								std::this_thread::sleep_for(std::chrono::milliseconds(sleep_time));
-							}
-						}else{
-							work_lock();
-							work->setNext(logout_time);
-							work_unlock();
-							delChar();
-						}
-					}
-				}else{
-					m->lock();
-					command=0;
-					if(luaS!=0){
-						lua_close(luaS);
-					}
-					luaS=0;
-					m->unlock();
-					_luaS=0;
-					_command=command;
 				}
 			}break;
 			case 2:{

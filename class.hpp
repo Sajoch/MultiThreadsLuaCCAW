@@ -56,7 +56,8 @@ class LuaThread{
 	void unlock();
 	size_t id;
 	static size_t numbers;
-	void clear_thread();
+	lua_State* initLua();
+	int work_call();
 public:
 	LuaThread();
 	~LuaThread();
@@ -66,6 +67,7 @@ public:
 	void delChar();
 	bool isChar(Character* p);
 	bool isAcc(Account* a);
+
 	Character* getChar();
 
 
