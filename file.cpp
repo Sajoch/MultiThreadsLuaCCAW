@@ -66,6 +66,8 @@ file::file(std::string _path, std::string mode, std::string _splitter):path(_pat
 	if(mode.find("b")!=std::string::npos){
 		io_mode|=std::fstream::binary;
 	}
+	std::ios_base::iostate exceptionMask = plik.exceptions() | std::ios::failbit;
+	plik.exceptions(exceptionMask);
 	try {
   	plik.open(path.c_str(),io_mode);
 	}
