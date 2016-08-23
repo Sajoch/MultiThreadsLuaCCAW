@@ -49,27 +49,8 @@ size_t fline::countVals(){
 }
 
 
-file::file(std::string _path, std::string mode, std::string _splitter):path(_path), splitter(_splitter){
-	std::ios_base::openmode io_mode;
-	if(mode.find("r")!=std::string::npos){
-		io_mode|=std::fstream::in;
-	}
-	if(mode.find("w")!=std::string::npos){
-		io_mode|=std::fstream::out;
-	}
-	if(mode.find("t")!=std::string::npos){
-		io_mode|=std::fstream::trunc;
-	}
-	if(mode.find("a")!=std::string::npos){
-		io_mode|=std::fstream::app;
-	}
-	if(mode.find("e")!=std::string::npos){
-		io_mode|=std::fstream::ate;
-	}
-	if(mode.find("b")!=std::string::npos){
-		io_mode|=std::fstream::binary;
-	}
-  plik.open(path.c_str(),io_mode);
+file::file(std::string _path, std::ios_base::openmode mode, std::string _splitter):path(_path), splitter(_splitter){
+  plik.open(path.c_str(), mode);
 	if(plik.bad()){
 		std::cerr << "Error: " << strerror(errno)<<std::endl;
 	}
