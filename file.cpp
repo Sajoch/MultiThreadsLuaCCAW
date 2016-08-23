@@ -1,5 +1,8 @@
 #include "file.hpp"
 #include <iostream>
+#include <errno.h>
+#include <string.h>
+
 fline::fline(){
 
 }
@@ -50,25 +53,31 @@ file::file(std::string _path, std::string mode, std::string _splitter):path(_pat
 	std::ios_base::openmode io_mode;
 	if(mode.find("r")!=std::string::npos){
 		io_mode|=std::fstream::in;
+		std::cout<<"open in"<<std::endl;
 	}
 	if(mode.find("w")!=std::string::npos){
 		io_mode|=std::fstream::out;
+		std::cout<<"open in"<<std::endl;
 	}
 	if(mode.find("t")!=std::string::npos){
 		io_mode|=std::fstream::trunc;
+		std::cout<<"open in"<<std::endl;
 	}
 	if(mode.find("a")!=std::string::npos){
 		io_mode|=std::fstream::app;
+		std::cout<<"open in"<<std::endl;
 	}
 	if(mode.find("e")!=std::string::npos){
 		io_mode|=std::fstream::ate;
+		std::cout<<"open in"<<std::endl;
 	}
 	if(mode.find("b")!=std::string::npos){
 		io_mode|=std::fstream::binary;
+		std::cout<<"open in"<<std::endl;
 	}
   plik.open(path.c_str(),io_mode);
 	if(!plik.good()){
-		cerr << "Error: " << strerror(errno);
+		std::cerr << "Error: " << strerror(errno)<<std::endl;
 	}
 
 }
@@ -83,7 +92,7 @@ void file::writeLine(std::string a){
 	plik<<a<<std::endl;
 }
 bool file::isGood(){
-	return plik.good();
+	return plik.is_open();
 }
 bool file::isEOF(){
 	return !plik.eof();
