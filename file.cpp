@@ -92,7 +92,7 @@ void file::writeLine(std::string a){
 	plik<<a<<std::endl;
 }
 bool file::isGood(){
-	return plik.bad();
+	return !plik.bad();
 }
 bool file::isEOF(){
 	return !plik.eof();
