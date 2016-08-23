@@ -516,8 +516,8 @@ int LuaThread::_Lua_md5(lua_State* s){
 }
 int LuaThread::_Lua_File_open(lua_State* s){
 	int n = lua_gettop(s);
-	if(n==3 && lua_isstring(s,1) && lua_isstring(s,2) && lua_isstring(s,3)){
-		file* nf = new file(lua_tostring(s,1),lua_tostring(s,2),lua_tostring(s,3));
+	if(n==3 && lua_isstring(s,1) && lua_isstring(s,2)){
+		file* nf = new file(lua_tostring(s,1),std::fstream::in|std::fstream::binary,lua_tostring(s,2));
 		lua_pushlightuserdata(s,nf);
 		return 1;
 	}

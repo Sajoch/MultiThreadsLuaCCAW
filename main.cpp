@@ -191,7 +191,7 @@ int read_config();
 
 int read_accounts(){
 	fline line;
-	file file_accounts("accounts.txt","rb",":");
+	file file_accounts("accounts.txt",std::fstream::in|std::fstream::binary,":");
 	vector<Mini_acc> active_accounts;
 	vector<Mini_char> active_chars;
 	if(!file_accounts.isGood()){

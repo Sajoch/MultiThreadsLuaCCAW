@@ -17,7 +17,7 @@ bool getConfigBool(string name){
 }
 int read_config(){
 	fline linia;
-	file plik_konfig("config.txt","rb","=");
+	file plik_konfig("config.txt",std::fstream::in|std::fstream::binary,"=");
 	if(!plik_konfig.isGood()){
 		cout<<"Cannot found config file, please create config.txt"<<endl;
 		return 1;
