@@ -19,7 +19,7 @@ class file{
 	std::fstream plik;
 	std::string splitter;
 public:
-	file(std::string _path, std::string mode, std::string _splitter);
+	file(std::string _path, std::ios_base::openmode mode, std::string _splitter);
 	fline getLine();
 	void writeLine(std::string a);
 	bool isGood();
