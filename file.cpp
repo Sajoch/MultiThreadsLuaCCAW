@@ -59,7 +59,6 @@ file::file(std::string _path, std::ios_base::openmode mode, std::string _splitte
 fline file::getLine(){
 	fline ret;
 	std::getline(plik,ret.getLine());
-	std::cout<<"line "<<ret.getLine()<<std::endl;
 	ret.parse(splitter);
 	return ret;
 }
