@@ -76,7 +76,7 @@ file::file(std::string _path, std::string mode, std::string _splitter):path(_pat
 		std::cout<<"open binary"<<std::endl;
 	}
   plik.open(path.c_str(),io_mode);
-	if(!plik.good()){
+	if(plik.bad()){
 		std::cerr << "Error: " << strerror(errno)<<std::endl;
 	}
 
@@ -92,7 +92,7 @@ void file::writeLine(std::string a){
 	plik<<a<<std::endl;
 }
 bool file::isGood(){
-	return plik.is_open();
+	return plik.bad();
 }
 bool file::isEOF(){
 	return !plik.eof();
