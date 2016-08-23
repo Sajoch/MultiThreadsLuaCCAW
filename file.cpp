@@ -47,7 +47,7 @@ size_t fline::countVals(){
 
 
 file::file(std::string _path, std::string mode, std::string _splitter):path(_path), splitter(_splitter){
-	std::ios_base::openmode io_mode;
+	std::ios_base::openmode io_mode=0;
 	if(mode.find("r")!=std::string::npos){
 		io_mode|=std::fstream::in;
 	}
