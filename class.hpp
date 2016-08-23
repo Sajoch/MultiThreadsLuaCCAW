@@ -10,10 +10,33 @@ std::string getConfigString(std::string name);
 size_t getConfigInt(std::string name);
 bool getConfigBool(std::string name);
 
+
+class Cookie{
+	std::string name;
+	std::string value;
+	std::string domain;
+	std::string path;
+	size_t expires;
+public:
+	Cookie();
+	Cookie(const Cookie& a);
+	std::string getName();
+	std::string getValue();
+	std::string getDomain();
+	std::string getPath();
+	size_t getExpires();
+	void setName(std::string a);
+	void setValue(std::string a);
+	void setDomain(std::string a);
+	void setPath(std::string a);
+	void setExpires(size_t a);
+};
+
 class Account{
 	std::string login;
 	std::string password;
 public:
+	std::vector < Cookie > cookies;
 	bool inthread;
 	Account(std::string _login, std::string _password);
 	~Account();
@@ -29,12 +52,14 @@ class Character{
 	size_t max_lvl;
 	time_t next_use;
 public:
-	Character(std::string _login, std::string _world, std::string _nick);
+	Character(std::string _login, std::string _world, std::string _nick, size_t _max_lvl);
 	Character(const Character& a);
 	Account* getParent();
 	bool isParent(Account* _par);
 	std::string getWorld();
 	std::string getNick();
+	size_t getMaxLVL();
+	void setMaxLVL(size_t l);
 	time_t getNext();
 	void setNext(time_t t);
 	std::string getLogin();
@@ -58,6 +83,8 @@ class LuaThread{
 	static size_t numbers;
 	lua_State* initLua();
 	int work_call();
+	void m_lock(int a);
+	void m_unlock(int a);
 public:
 	LuaThread();
 	~LuaThread();
@@ -73,6 +100,7 @@ public:
 
 	//Lua functions
 	static int _Lua_sleep(lua_State* s);
+	static int _Lua_print_stack(lua_State* s);
 	static int _Lua_print(lua_State* s);
 	static int _Lua_mstime(lua_State* s);
 	static int _Lua_time(lua_State* s);
@@ -98,6 +126,9 @@ public:
 	static int _Lua_Linia_isCommented(lua_State* s);
 	static int _Lua_Linia_countVals(lua_State* s);
 	static int _Lua_Linia_getVal(lua_State* s);
+
+	static int _Lua_getReadableDate(lua_State* s);
+	static int _Lua_TimeFromUT(lua_State* s);
 
 	//debugging
 	static int traceback (lua_State *L);

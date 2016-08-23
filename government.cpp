@@ -7,12 +7,14 @@ using namespace std;
 
 extern std::vector<Account*> accounts;
 extern std::vector<Character*> characters;
+extern size_t mb_limit;
 
 vector<LuaThread> threads;
 size_t LuaThread::numbers=1;
 bool init=false;
 void government_init(){
 	size_t trs = getConfigInt("thread");
+	mb_limit = getConfigInt("log_limit")*1024*1024;
 	cout<<"start "<<trs<<" threads"<<endl;
 	threads.resize(trs);
 }

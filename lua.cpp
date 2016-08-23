@@ -1,5 +1,4 @@
 #include "class.hpp"
-#include <iostream>
 #include <unistd.h>
 #include <mutex>
 #include <chrono>
@@ -18,14 +17,51 @@ void work_lock();
 void work_unlock();
 bool work_locked();
 std::mutex LuaThread::print_mutex;
+void PrintTable(lua_State *s, int index, int shift);
+extern std::string lua_script;
 
-
+void writeLog(string a);
+void writeLog(string a, bool nl);
+void writeLog(size_t a);
+void writeLog(size_t a, bool nl);
+void writeLog(double a);
+void writeLog(double a, bool nl);
 
 /*
  * 0 - pause
  * 1 - resume
  * 2 - stop
 */
+void LuaSetTable(lua_State* s, int index, const char* key, const char* value){
+	lua_pushstring(s,key);
+	lua_pushstring(s,value);
+	lua_settable(s,index);
+}
+void LuaSetTable(lua_State* s, int index, const char* key, size_t value){
+	lua_pushstring(s,key);
+	lua_pushinteger(s,value);
+	lua_settable(s,index);
+}
+string LuaGetStringTable(lua_State* s, int index, const char* key){
+	string ret;
+	lua_pushstring(s,key);
+	lua_gettable(s,index);
+	if(lua_isstring(s,-1)){
+		ret = lua_tostring(s,-1);
+	}
+	lua_pop(s,1);
+	return ret;
+}
+size_t LuaGetIntTable(lua_State* s, int index, const char* key){
+	size_t ret;
+	lua_pushstring(s,key);
+	lua_gettable(s,index);
+	if(lua_isstring(s,-1)){
+		ret = lua_tointeger(s,-1);
+	}
+	lua_pop(s,1);
+	return ret;
+}
 void LuaThread::send_command(int a){
 	std::unique_lock<std::mutex> lk(*m);
 	command = a;
@@ -89,39 +125,40 @@ void LuaThread::start_thread(LuaThread* a){
 	a->thread();
 }
 lua_State* LuaThread::initLua(){
-	m->lock();
 	luaS=luaL_newstate();
-	m->unlock();
 	const luaL_Reg lualibs[] = {
 		{"", luaopen_base},
 		{LUA_TABLIBNAME, luaopen_table},
 		{LUA_STRLIBNAME, luaopen_string},
 		{LUA_MATHLIBNAME, luaopen_math},
+		{LUA_IOLIBNAME, luaopen_io},
+		{LUA_OSLIBNAME, luaopen_os},
 		{NULL, NULL}
 	};
 	const luaL_Reg *lib = lualibs;
-	m->lock();
 	for (; lib->func; lib++) {
 		lua_pushcfunction(luaS, lib->func);
 		lua_pushstring(luaS, lib->name);
 		lua_call(luaS, 1, 0);
 	}
-	if(luaL_loadfile(luaS,"system.lua")){
-		cout<<"Lua fatal error: luaL_loadfile() failed\n\t"<<lua_tostring(luaS,-1)<<endl;
+	if(luaL_loadfile(luaS,lua_script.c_str())){
+		writeLog("Lua fatal error: luaL_loadfile() failed",true);
+		writeLog(lua_tostring(luaS,-1),true);
 		lua_close(luaS);
-		m->unlock();
 		return 0;
 	}
 	if (lua_pcall(luaS, 0, 0, 0)){
-		cout<<"Lua fatal error: lua_pcall() failed\n\t"<<lua_tostring(luaS,-1)<<endl;
+		writeLog("Lua fatal error: lua_pcall() failed",true);
+		writeLog(lua_tostring(luaS,-1),true);
 		lua_close(luaS);
-		m->unlock();
 		return 0;
 	}
 	lua_register(luaS,"print",_Lua_print);
 	lua_register(luaS,"mstime",_Lua_mstime);
 	lua_register(luaS,"time",_Lua_time);
 	lua_register(luaS,"getHour",_Lua_getHour);
+	lua_register(luaS,"getReadableDate",_Lua_getReadableDate);
+	lua_register(luaS,"TimeFromUT",_Lua_TimeFromUT);
 	lua_register(luaS,"md5",_Lua_md5);
 	lua_register(luaS,"sha1",_Lua_sha1);
 	//rapidjson
@@ -138,11 +175,12 @@ lua_State* LuaThread::initLua(){
 	lua_register(luaS,"getConfigString",_Lua_getConfigString);
 	lua_register(luaS,"getConfigInt",_Lua_getConfigInt);
 	lua_register(luaS,"getConfigBool",_Lua_getConfigBool);
-	m->unlock();
 	return luaS;
 }
+
+
 int LuaThread::work_call(){
-	m->lock();
+	m_lock(__LINE__);
 	if(del){ //clean and go sleep
 		if(work_acc!=0){
 			work_acc->inthread=false;
@@ -153,36 +191,54 @@ int LuaThread::work_call(){
 			lua_close(luaS);
 			luaS=0;
 		}
-		m->unlock();
+		m_unlock(__LINE__);
 		size_t sleep_after_work=5;
 		sleep_after_work+=rand()%10;
 		std::this_thread::sleep_for(std::chrono::seconds(sleep_after_work));
 		return 1;
 	}
 	if(work!=0){ //init lua and tick
+		//cout<<"work"<<endl;
 		if(luaS==0){ //init lua
-			m->unlock();
+			m_unlock(__LINE__);
 			work_lock();
 			if(work==0 || del || work_acc == 0){
-				work_unlock();
 				del = true;
+				work_unlock();
 				return 0;
 			}
 			if(initLua()==0){
-				cout<<"error lua cannot be create"<<endl;
+				writeLog("error lua cannot be create",true);
 				exit(1);
 			}
-			m->lock();
 			lua_getfield(luaS, LUA_GLOBALSINDEX, "Postac");
 			//lua_pushlightuserdata(luaS, this);
 			lua_pushstring(luaS, work_acc->getLogin().c_str());
 			lua_pushstring(luaS, work_acc->getPassword().c_str());
 			lua_pushstring(luaS, work->getNick().c_str());
 			lua_pushstring(luaS, work->getWorld().c_str());
-			lua_pushnil(luaS);
+			lua_pushinteger(luaS,work->getMaxLVL());
+			//stworzenie tablicy zawierajacej cookies
+			size_t wacc = work_acc->cookies.size();
+			lua_newtable(luaS);
+			for(size_t i=0;i<wacc;i++){
+				Cookie& o = work_acc->cookies[i];
+				lua_createtable(luaS,0,5);
+				//domain, name, path, value, expire
+				LuaSetTable(luaS,8,"domain",o.getDomain().c_str());
+				LuaSetTable(luaS,8,"name",o.getName().c_str());
+				LuaSetTable(luaS,8,"path",o.getPath().c_str());
+				LuaSetTable(luaS,8,"value",o.getValue().c_str());
+				LuaSetTable(luaS,8,"expire",o.getExpires());
+				lua_rawseti(luaS,7,luaL_getn(luaS,7)+1);
+			}
+			//PrintTable(luaS,7,0);
+			//_Lua_print_stack(luaS);
 			work_unlock();
-			if(lua_pcall(luaS, 5, 1, 0) != 0){
-				cout<<"error running function 'new Postac': "<<lua_tostring(luaS,-1)<<endl;
+			m_lock(__LINE__);
+			if(lua_pcall(luaS, 6, 1, 0) != 0){
+				writeLog("error running function 'new Postac': ");
+				writeLog(lua_tostring(luaS,-1),true);
 				exit(1);
 			}
 			lua_setfield(luaS, LUA_GLOBALSINDEX, "account");
@@ -193,48 +249,104 @@ int LuaThread::work_call(){
 		lua_remove(luaS,-2);
 		lua_getfield(luaS, LUA_GLOBALSINDEX, "account");
 		if(lua_isfunction(luaS,-2)){
+			m_unlock(__LINE__);
 			work_lock();
 			if(work_acc == 0 || work == 0 || del){
 				del = true;
+				work_unlock();
 				return 0;
 			}
 			work_unlock();
-
-			if(lua_pcall(luaS, 1, 2, 0) != 0){
-				cout<<"error running function 'account.tick': "<<lua_tostring(luaS,-1)<<endl;
+			m_lock(__LINE__);
+			if(lua_pcall(luaS, 1, 3, 0) != 0){
+				writeLog("error running function 'account.tick': ");
+				writeLog(lua_tostring(luaS,-1),true);
 				exit(1);
 			}
-			size_t sleep_time = lua_tointeger(luaS,-2);
-			size_t logout_time = lua_tointeger(luaS,-1);
-			lua_pop(luaS,2);
+			size_t sleep_time = lua_tointeger(luaS,-3);
+			size_t logout_time = lua_tointeger(luaS,-2);
+			if(lua_istable(luaS,-1)){
+				work_lock();
+				if(work_acc == 0 || work == 0 || del){
+					del = true;
+					work_unlock();
+					return 0;
+				}
+				//umieszczenie cookies z lua w pamieciu konta
+				work_acc->cookies.clear();
+				lua_pushnil(luaS);
+			  while(lua_next(luaS, -2) != 0){
+					Cookie tc;
+					tc.setDomain(LuaGetStringTable(luaS,-2,"domain"));
+					tc.setPath(LuaGetStringTable(luaS,-2,"path"));
+					tc.setName(LuaGetStringTable(luaS,-2,"name"));
+					tc.setValue(LuaGetStringTable(luaS,-2,"value"));
+					tc.setExpires(LuaGetIntTable(luaS,-2,"expire"));
+					work_acc->cookies.push_back(tc);
+					lua_pop(luaS,1);
+				}
+				//sprawdzenie czy cookies nie wygasly
+				std::chrono::seconds req =
+					std::chrono::duration_cast< std::chrono::seconds >(
+						std::chrono::system_clock::now().time_since_epoch()
+					);
+				size_t t=req.count();
+				size_t i=work_acc->cookies.size();
+				do{
+					i--;
+					Cookie& o = work_acc->cookies[i];
+					if(o.getExpires()<t){
+						work_acc->cookies.erase(work_acc->cookies.begin()+i);
+					}
+				}while(i!=0);
+				work_unlock();
+			}
+			lua_pop(luaS, 3);
+			m_unlock(__LINE__);
 			if(logout_time==0){
 				if(sleep_time>0){
 					std::this_thread::sleep_for(std::chrono::milliseconds(sleep_time));
 				}
 			}else{
+				//cout<<"logout "<<(logout_time)<<endl;
 				work_lock();
-				work->setNext(logout_time);
+				std::chrono::seconds req =
+					std::chrono::duration_cast< std::chrono::seconds >(
+						std::chrono::system_clock::now().time_since_epoch()
+					);
+				size_t t=req.count();
+				work->setNext(t+logout_time);
 				work_unlock();
+				m_lock(__LINE__);
 				del = true;
+				m_unlock(__LINE__);
 			}
-			m->unlock();
 			return 0;
 		}else{
-			cout<<"error account:tick must be function"<<endl;
+			writeLog("error account:tick must be function",true);
 			exit(1);
 		}
 		return 0;
 	}
-	m->lock();
+	m_lock(__LINE__);
 	del = true;
-	m->unlock();
+	m_unlock(__LINE__);
 	return 0;
+}
+
+void LuaThread::m_lock(int a){
+	//cout<<"m_lock "<<a<<endl;
+	m->lock();
+}
+void LuaThread::m_unlock(int a){
+	//cout<<"m_unlock "<<a<<endl;
+	m->unlock();
 }
 void LuaThread::thread(){
 	while(1){
-		m->lock();
+		m_lock(__LINE__);
 		int _command=command;
-		m->unlock();
+		m_unlock(__LINE__);
 		switch(_command){
 			case 0:{//wait
 				std::unique_lock<std::mutex> lk(*m);
@@ -260,39 +372,67 @@ void PrintTable(lua_State *s, int index, int shift){
 	for(int i=0;i<shift;i++){
 		supp+=" ";
 	}
-	cout<<"table"<<endl;
+	writeLog("table",true);
   while(lua_next(s, index) != 0){
 		int key_type = lua_type(s,-2);
 		int val_type = lua_type(s,-1);
-		cout<<supp<<"[";
+		writeLog(supp+"[");
 		switch(key_type){
 			case LUA_TSTRING:
-				cout<<std::string(lua_tostring(s,-2),lua_strlen(s,-2));
+				writeLog(std::string(lua_tostring(s,-2),lua_strlen(s,-2)));
 			break;
 			case LUA_TNUMBER:
-				cout<<lua_tonumber(s,-2);
+				writeLog(lua_tonumber(s,-2));
 			break;
 		}
-		cout<<"] = ";
+		writeLog("] = ");
 		switch(val_type){
 			case LUA_TSTRING:
-				cout<<std::string(lua_tostring(s,-1),lua_strlen(s,-1))<<endl;
+				writeLog(std::string(lua_tostring(s,-1),lua_strlen(s,-1)),true);
 			break;
 			case LUA_TBOOLEAN:
-				cout<<(lua_toboolean(s,-1)?"true":"false")<<endl;
+				writeLog((lua_toboolean(s,-1)?"true":"false"),true);
 			break;
 			case LUA_TNUMBER:
-				cout<<lua_tonumber(s,-1)<<endl;
+				if(lua_tonumber(s,-1)==lua_tointeger(s,-1)){
+					writeLog((size_t)lua_tointeger(s,-1),true);
+				}else{
+					writeLog(lua_tonumber(s,-1),true);
+				}
 			break;
 			case LUA_TTABLE:{
 				PrintTable(s,-2,shift+1);
 			}break;
 			default:
-				cout<<lua_typename(s,val_type)<<endl;
+				writeLog(lua_typename(s,val_type),true);
 			break;
 		}
 		lua_pop(s,1);
 	}
+}
+
+int LuaThread::_Lua_print_stack(lua_State* s){
+	print_mutex.lock();
+	int n = lua_gettop(s);
+	for(int i=1;i<=n;i++){
+		int typ = lua_type(s,i);
+		switch(typ){
+			case LUA_TSTRING:
+				writeLog(std::string(lua_tostring(s,i),lua_strlen(s,i)),true);
+			break;
+			case LUA_TBOOLEAN:
+				writeLog((lua_toboolean(s,i)?"true":"false"),true);
+			break;
+			case LUA_TNUMBER:
+				writeLog(lua_tonumber(s,i),true);
+			break;
+			default:
+				writeLog(lua_typename(s,typ),true);
+			break;
+		}
+	}
+	print_mutex.unlock();
+	return 0;
 }
 int LuaThread::_Lua_print(lua_State* s){
 	bool print_it=true;
@@ -305,22 +445,21 @@ int LuaThread::_Lua_print(lua_State* s){
 		int typ = lua_type(s,i);
 		switch(typ){
 			case LUA_TSTRING:
-				cout<<std::string(lua_tostring(s,i),lua_strlen(s,i));
+				writeLog(std::string(lua_tostring(s,i),lua_strlen(s,i)),true);
 			break;
 			case LUA_TBOOLEAN:
-				cout<<(lua_toboolean(s,i)?"true":"false");
+				writeLog((lua_toboolean(s,i)?"true":"false"),true);
 			break;
 			case LUA_TNUMBER:
-				cout<<lua_tonumber(s,i);
+				writeLog(lua_tonumber(s,i),true);
 			break;
 			case LUA_TTABLE:{
 				PrintTable(s,i,0);
 			}break;
 			default:
-				cout<<lua_typename(s,typ);
+				writeLog(lua_typename(s,typ),true);
 			break;
 		}
-		cout<<endl;
 	}
 	print_mutex.unlock();
 	return 0;
@@ -445,39 +584,9 @@ int LuaThread::traceback (lua_State *L) {
   lua_call(L, 2, 1);  /* call debug.traceback */
   return 1;
 }
-void LuaSetTable(lua_State* s, int index, const char* key, const char* value){
-	lua_pushstring(s,key);
-	lua_pushstring(s,value);
-	lua_settable(s,index);
-}
-void LuaSetTable(lua_State* s, int index, const char* key, size_t value){
-	lua_pushstring(s,key);
-	lua_pushinteger(s,value);
-	lua_settable(s,index);
-}
-string LuaGetStringTable(lua_State* s, int index, const char* key){
-	string ret;
-	lua_pushstring(s,key);
-	lua_gettable(s,index);
-	if(lua_isstring(s,-1)){
-		ret = lua_tostring(s,-1);
-	}
-	lua_pop(s,1);
-	return ret;
-}
-size_t LuaGetIntTable(lua_State* s, int index, const char* key){
-	size_t ret;
-	lua_pushstring(s,key);
-	lua_gettable(s,index);
-	if(lua_isstring(s,-1)){
-		ret = lua_tointeger(s,-1);
-	}
-	lua_pop(s,1);
-	return ret;
-}
+string encodeURI(string a);
 int LuaThread::_Lua_http_request(lua_State* s){
 	//url, method, cookies, postdata, additional
-	//TODO add catcher of exceptions
 	int n = lua_gettop(s);
 	if(n<3){
 		lua_pushstring(s,"too few arguments");
@@ -497,7 +606,7 @@ int LuaThread::_Lua_http_request(lua_State* s){
 		return 1;
 	}
 	string host = url.substr(0,br);
-	string path = url.substr(br);
+	string path = encodeURI(url.substr(br));
 	string method = "GET";
 	if(lua_isstring(s,2)){
 		method = lua_tostring(s,2);
@@ -505,6 +614,11 @@ int LuaThread::_Lua_http_request(lua_State* s){
 		lua_pushstring(s,"wrong method");
 		return 1;
 	}
+	std::chrono::seconds req =
+		std::chrono::duration_cast< std::chrono::seconds >(
+			std::chrono::system_clock::now().time_since_epoch()
+		);
+	size_t time_sec=req.count();
 	try{
 		Poco::Net::NameValueCollection wcookies;
 		std::vector < Poco::Net::HTTPCookie > cookies;
@@ -516,7 +630,7 @@ int LuaThread::_Lua_http_request(lua_State* s){
 				tc.setPath(LuaGetStringTable(s,-2,"path"));
 				tc.setName(LuaGetStringTable(s,-2,"name"));
 				tc.setValue(LuaGetStringTable(s,-2,"value"));
-				tc.setMaxAge(LuaGetIntTable(s,-2,"expire"));
+				tc.setMaxAge(time_sec-LuaGetIntTable(s,-2,"expire"));
 				cookies.push_back(tc);
 				lua_pop(s,1);
 			}
@@ -571,7 +685,7 @@ int LuaThread::_Lua_http_request(lua_State* s){
 			LuaSetTable(s,-3,"name",o.getName().c_str());
 			LuaSetTable(s,-3,"path",o.getPath().c_str());
 			LuaSetTable(s,-3,"value",o.getValue().c_str());
-			LuaSetTable(s,-3,"expire",o.getMaxAge());
+			LuaSetTable(s,-3,"expire",time_sec+o.getMaxAge());
 			size_t id = 0;
 			lua_pushnil(s);
 		  while(lua_next(s, 3) != 0){
@@ -605,26 +719,41 @@ int LuaThread::_Lua_http_request(lua_State* s){
 		lua_pushstring(s, "body");
 		lua_pushstring(s, "");
 		lua_settable(s, -3);
+		lua_pushstring(s, "err");
+		lua_pushstring(s, "");
+		lua_settable(s, -3);
 		return 1;
 	}
 }
 
 int LuaThread::_Lua_getConfigString(lua_State* s){
-	const char* name = luaL_checkstring(s,1);
-	string tmp = getConfigString(name);
-	lua_pushstring(s,tmp.c_str());
+	try{
+		const char* name = luaL_checkstring(s,1);
+		string tmp = getConfigString(name);
+		lua_pushstring(s,tmp.c_str());
+	}catch(...){
+		lua_pushnil(s);
+	}
 	return 1;
 }
 int LuaThread::_Lua_getConfigInt(lua_State* s){
-	const char* name = luaL_checkstring(s,1);
-	size_t tmp = getConfigInt(name);
-	lua_pushinteger(s,tmp);
+	try{
+		const char* name = luaL_checkstring(s,1);
+		size_t tmp = getConfigInt(name);
+		lua_pushinteger(s,tmp);
+	}catch(...){
+		lua_pushnil(s);
+	}
 	return 1;
 }
 int LuaThread::_Lua_getConfigBool(lua_State* s){
-	const char* name = luaL_checkstring(s,1);
-	bool tmp = getConfigBool(name);
-	lua_pushboolean(s,tmp);
+	try{
+		const char* name = luaL_checkstring(s,1);
+		bool tmp = getConfigBool(name);
+		lua_pushboolean(s,tmp);
+	}catch(...){
+		lua_pushnil(s);
+	}
 	return 1;
 }
 int LuaThread::_Lua_getHour(lua_State* s){
@@ -632,5 +761,57 @@ int LuaThread::_Lua_getHour(lua_State* s){
 	tm *tm_struct = localtime(&t);
 	int hour = tm_struct->tm_hour;
 	lua_pushnumber(s, hour);
+	return 1;
+}
+int LuaThread::_Lua_getReadableDate(lua_State* s){
+	time_t t = time(NULL);
+	tm *tm_struct = localtime(&t);
+	int tm_year = 1900 + tm_struct->tm_year;
+	int tm_mon = 1 + tm_struct->tm_mon;
+	int tm_mday = tm_struct->tm_mday;
+	string buf = "";
+	buf+=std::to_string(tm_year);
+	buf+="-";
+	buf+=std::to_string(tm_mon);
+	buf+="-";
+	buf+=std::to_string(tm_mday);
+	lua_pushstring(s, buf.c_str());
+	return 1;
+}
+
+int LuaThread::_Lua_TimeFromUT(lua_State* s){
+	time_t ut = luaL_checknumber(s,1);
+	tm *tm_struct = localtime(&ut);
+	int tm_sec = tm_struct->tm_sec;
+	int tm_min = tm_struct->tm_min;
+	int tm_hour	=tm_struct->tm_hour;
+	int tm_mday =tm_struct->tm_mday;
+	int tm_mon = 1 + tm_struct->tm_mon;
+	int tm_year = 1900 + tm_struct->tm_year;
+	string buf = "";
+	buf += std::to_string(tm_hour);
+	buf += ":";
+	if(tm_min<10){
+		buf+="0";
+	}
+	buf += std::to_string(tm_min);
+	buf += ":";
+	if(tm_sec<10){
+		buf+="0";
+	}
+	buf += std::to_string(tm_sec);
+	buf += " ";
+	if(tm_mday<10){
+		buf+="0";
+	}
+	buf += std::to_string(tm_mday);
+	buf += "-";
+	if(tm_mon<10){
+		buf+="0";
+	}
+	buf += std::to_string(tm_mon);
+	buf += "-";
+	buf += std::to_string(tm_year);
+	lua_pushstring(s, buf.c_str());
 	return 1;
 }
