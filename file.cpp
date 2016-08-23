@@ -53,27 +53,21 @@ file::file(std::string _path, std::string mode, std::string _splitter):path(_pat
 	std::ios_base::openmode io_mode;
 	if(mode.find("r")!=std::string::npos){
 		io_mode|=std::fstream::in;
-		std::cout<<"open in"<<std::endl;
 	}
 	if(mode.find("w")!=std::string::npos){
 		io_mode|=std::fstream::out;
-		std::cout<<"open out"<<std::endl;
 	}
 	if(mode.find("t")!=std::string::npos){
 		io_mode|=std::fstream::trunc;
-		std::cout<<"open trucn"<<std::endl;
 	}
 	if(mode.find("a")!=std::string::npos){
 		io_mode|=std::fstream::app;
-		std::cout<<"open app"<<std::endl;
 	}
 	if(mode.find("e")!=std::string::npos){
 		io_mode|=std::fstream::ate;
-		std::cout<<"open ate"<<std::endl;
 	}
 	if(mode.find("b")!=std::string::npos){
 		io_mode|=std::fstream::binary;
-		std::cout<<"open binary"<<std::endl;
 	}
   plik.open(path.c_str(),io_mode);
 	if(plik.bad()){
@@ -84,7 +78,7 @@ file::file(std::string _path, std::string mode, std::string _splitter):path(_pat
 fline file::getLine(){
 	fline ret;
 	std::getline(plik,ret.getLine());
-	//std::cout<<"line "<<ret.getLine()<<std::endl;
+	std::cout<<"line "<<ret.getLine()<<std::endl;
 	ret.parse(splitter);
 	return ret;
 }
