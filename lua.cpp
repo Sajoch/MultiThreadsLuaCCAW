@@ -292,13 +292,13 @@ int LuaThread::work_call(){
 					);
 				size_t t=req.count();
 				size_t i=work_acc->cookies.size();
-				do{
+				while(i>0){
 					i--;
 					Cookie& o = work_acc->cookies[i];
 					if(o.getExpires()<t){
 						work_acc->cookies.erase(work_acc->cookies.begin()+i);
 					}
-				}while(i!=0);
+				};
 				work_unlock();
 			}
 			lua_pop(luaS, 3);
